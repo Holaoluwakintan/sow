@@ -8,7 +8,7 @@
 //   POST {action:'auto', platform, on}                 -> switch auto-posting on/off for one connected platform
 //   POST {action:'disconnect', platform}
 //   POST {action:'post_now', platform, post_id}        -> post one item now
-import { json, readBody, requireOwner, db, sign, setSecret, getPref, setPref, APP } from './_lib.js';
+import { json, readBody, requireOwner, db, sign, setSecret, getPref, setPref, APP, ACCOUNT_ERR, recentLog } from './_lib.js';
 import { AUTO, ytConfigured, liConfigured, liAuthUrl, thConfigured, thAuthUrl, metaToken, metaScan, metaPick, disconnect } from './_connectors.js';
 
 export default async function handler(req, res) {
@@ -17,6 +17,14 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const out = { ai: { connected: !!process.env.GEMINI_API_KEY }, auto: await getPref('auto', {}), meta: { token: !!(await metaToken()) } };
       for (const [k, a] of Object.entries(AUTO)) { try { out[k] = await a.status(); } catch (e) { out[k] = { connected: false, error: e.message }; } }
+      // Last auto-post result per platform (health check 2026-10-14), so the app can say WHY posts are failing.
+      out.health = {};
+      const day = Date.now() - 86400e3;
+      for (const l of await recentLog(72)) {
+        const h = out.health[l.platform] || (out.health[l.platform] = { ok: l.ok, detail: String(l.detail || '').slice(0, 300), at: l.at, fails24: 0 });
+        if (!l.ok && new Date(l.at).getTime() > day) h.fails24++;
+        if (h.at === l.at && !l.ok && ACCOUNT_ERR.test(l.detail || '')) h.account = true;
+      }
       return json(res, 200, out);
     }
     const b = await readBody(req);

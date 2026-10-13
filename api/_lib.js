@@ -62,6 +62,11 @@ export async function getSecret(name) {
 export async function setSecret(name, value) {
   await db('sp_secrets?on_conflict=name', { method: 'POST', body: { name, value, updated_at: new Date().toISOString() }, prefer: 'resolution=merge-duplicates' });
 }
+// Health check 2026-10-14: an error about the whole ACCOUNT (no credit, daily quota, expired login), not about one post.
+export const ACCOUNT_ERR = /credit|quota|rate.?limit|too many requests|\b429\b|expired|revoked|invalid[_ ]?(grant|token)|unauthori[sz]ed|\b401\b|has not been used|accessNotConfigured|exceeded the number of videos/i;
+export async function recentLog(hours) {
+  try { return (await db('sp_log?select=post_id,platform,ok,detail,at&at=gte.' + new Date(Date.now() - hours * 3600e3).toISOString() + '&order=id.desc&limit=3000')) || []; } catch { return []; }
+}
 export async function log(post_id, platform, ok, detail) {
   try { await db('sp_log', { method: 'POST', body: { post_id, platform, ok, detail: String(detail || '').slice(0, 500) } }); } catch {}
 }
@@ -129,5 +134,5 @@ export async function saveRemote(post, platform, id) {
   await db('sp_posts?id=eq.' + post.id, { method: 'PATCH', body: { remote } });
   post.remote = remote;
 }
-// Effective auto-post time for one platform: the platform's time slot if set, else the post's own time.
-export function effTime(post, platform, slots) { return ((slots || {})[platform] || (post.post_time || '06:00')).slice(0, 5); }
+// Effective auto-post time for one platform: the platform's time slot if set, else the post's own time. Clips keep their mood-slot time.
+export function effTime(post, platform, slots) { if (post.source === 'clip') return (post.post_time || '12:00').slice(0, 5); return ((slots || {})[platform] || (post.post_time || '06:00')).slice(0, 5); }

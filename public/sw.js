@@ -1,5 +1,5 @@
 // Sow service worker: app shell offline, everything else from the network.
-var C = 'sow-v6', SHELL = ['/', '/index.html', '/styles.css?v=6', '/app.js?v=6', '/vendor/supabase.js', '/manifest.webmanifest', '/icons/icon-192.png'];
+var C = 'sow-v9', SHELL = ['/', '/index.html', '/styles.css?v=9', '/app.js?v=9', '/vendor/supabase.js', '/manifest.webmanifest', '/icons/icon-192.png'];
 self.addEventListener('install', function (e) { e.waitUntil(caches.open(C).then(function (c) { return c.addAll(SHELL); })); self.skipWaiting(); });
 self.addEventListener('activate', function (e) { e.waitUntil(caches.keys().then(function (ks) { return Promise.all(ks.filter(function (k) { return k !== C; }).map(function (k) { return caches.delete(k); })); })); self.clients.claim(); });
 self.addEventListener('fetch', function (e) {

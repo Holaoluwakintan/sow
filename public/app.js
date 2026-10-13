@@ -1,4 +1,4 @@
-/* Sow: daily posting app for Olaoluwa Michael. Plain JS, no build step. v6 */
+/* Sow: daily posting app for Olaoluwa Michael. Plain JS, no build step. v8 (clip bank + Blossom lane) */
 'use strict';
 var CFG = window.SOW_CFG;
 var sb = window.supabase.createClient(CFG.url, CFG.anon, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'sow-auth' } });
@@ -86,7 +86,7 @@ async function loadPosts() {
   S.posts = (r.data || []).sort(function (a, b) { return sortKey(a) < sortKey(b) ? -1 : sortKey(a) > sortKey(b) ? 1 : 0; });
 }
 async function loadPrefs() {
-  var r = await sb.from('sp_prefs').select('key,value'); if (r.error) return;
+  var r = await sb.from('sp_prefs').select('key,value').not('key', 'like', 'clip:%').not('key', 'like', 'blossom:%'); if (r.error) return;
   S.prefs = {}; (r.data || []).forEach(function (x) { S.prefs[x.key] = x.value; });
 }
 async function savePref(key, value) {
@@ -179,7 +179,7 @@ function intentUrl(p, k) {
 }
 
 function platCard(p, pl) {
-  var posted = (p.posted || {})[pl.k], st, acts = '', auto = pl.auto && isAuto(pl.k), slot = slots()[pl.k], at = slot || hm(p);
+  var posted = (p.posted || {})[pl.k], st, acts = '', auto = pl.auto && isAuto(pl.k), slot = p.source === 'clip' ? null : slots()[pl.k], at = slot || hm(p);
   var pill = auto ? '<span class="pill auto">auto</span>' : pl.k === 'fb_page' ? '<span class="pill off">soon</span>' : pl.mode === 'video' || pl.mode === 'tvideo' ? '<span class="pill tap">video</span>' : '<span class="pill tap">1-tap</span>';
   if (posted) st = '✓ Posted ' + new Date(posted).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos' });
   var best = slot ? ' · best at ' + slot : '';
@@ -214,29 +214,29 @@ function renderToday() {
   setTab('today');
   var f = focusPost();
   if (!f) { view.innerHTML = '<div class="card center"><h2>Your bank is empty</h2><p class="muted">Connect your Google Sheet or import your content bank to get started.</p><a class="btn" href="#sheet">Add posts</a></div>'; return; }
-  var p = f.p, plats = platsFor(p);
+  var p = f.p, plats = platsFor(p), isVid = !p.media_url && !!p.video_url;
   var early = p.post_date > today() && !sched().some(function (x) { return x.post_date < today() && x.status !== 'skipped'; });
   var done = plats.filter(function (pl) { return (p.posted || {})[pl.k]; }).length;
   var strip = f.day.length > 1 ? '<div class="daystrip">' + f.day.map(function (x) { var dn = Object.keys(x.posted || {}).length; return '<button class="chip' + (x.id === p.id ? ' on' : '') + '" data-sel="' + x.id + '"><b>' + esc(hm(x)) + '</b> ' + esc(clip(x.title || '', 18)) + (dn ? ' ✓' : '') + '</button>'; }).join('') + '</div>' : '';
-  view.innerHTML =
+  view.innerHTML = healthBanner() +
     (early ? '<div class="card small"><b>Your first post goes out ' + esc(rel(p.post_date).toLowerCase()) + ' at ' + esc(hm(p)) + '.</b> Everything below is ready. You can share early if you like.</div>' : '') +
     (f.day.length > 1 ? '<p class="small muted" style="margin:4px 2px">' + f.day.length + ' posts ' + esc(f.label.toLowerCase() === 'today' ? 'today' : 'on ' + niceDate(p.post_date)) + '. Tap one:</p>' : '') + strip +
     '<div class="card hero"><div class="label"><span>' + esc(f.label) + ' · ' + esc(niceDate(p.post_date)) + ' · ' + esc(hm(p)) + '</span><span>' + done + '/' + plats.length + ' done</span></div>' +
-    (p.media_url ? '<img id="heroimg" src="' + esc(mediaSrc(p.media_url)) + '" alt="' + esc(p.title) + '">' : '') +
+    (p.media_url ? '<img id="heroimg" src="' + esc(mediaSrc(p.media_url)) + '" alt="' + esc(p.title) + '">' : p.video_url ? '<video class="herovid" src="' + esc(p.video_url) + '"' + (p.thumb_url ? ' poster="' + esc(p.thumb_url) + '"' : '') + ' controls playsinline preload="none"></video>' : p.thumb_url ? '<img id="heroimg" src="' + esc(p.thumb_url) + '" alt="">' : '') +
     '<div class="body"><h2>' + esc(p.title) + '</h2>' + (p.reference ? '<div class="ref">' + esc(p.reference) + '</div>' : '') + '<p class="cap">' + esc(p.caption) + '</p><p class="muted small">' + esc(p.hashtags) + '</p>' +
-    '<button class="btn big" id="shareAll">📤 Share picture + caption</button>' +
-    '<p class="small muted center" style="margin:8px 0 0">Copies the caption, then opens your phone\'s share menu with the picture. Pick Facebook, WhatsApp, Instagram, anywhere.</p>' +
+    '<button class="btn big" id="shareAll">📤 Share ' + (isVid ? 'video' : 'picture') + ' + caption</button>' +
+    '<p class="small muted center" style="margin:8px 0 0">Copies the caption, then opens your phone\'s share menu with the ' + (isVid ? 'video' : 'picture') + '. Pick Facebook, WhatsApp, Instagram, anywhere.</p>' +
     (p.first_comment ? '<button class="btn sm ghost" id="fcBtn" style="width:100%;margin-top:8px">💬 Copy first comment</button>' : '') +
     '<div class="row" style="margin-top:10px"><button class="btn sm soft grow" id="aiBtn">✨ Rewrite for each platform</button><button class="btn sm ghost" id="editBtn">Edit</button></div></div></div>' +
     '<h3>Where it goes</h3><div class="plats">' + plats.map(function (pl) { return platCard(p, pl); }).join('') + '</div>' +
     '<p class="small muted center">Choose which places show here in <a href="#connect">Connect</a>.</p>' +
     '<details class="card"><summary>How Sow works</summary><ol class="steps small"><li><b>Share picture + caption</b> copies the caption and opens the share menu with the picture attached.</li><li>Pick Facebook, WhatsApp or Instagram. If the caption box is empty, long-press and <b>Paste</b>.</li><li>Tap <b>✓</b> on each place you posted. Your 🔥 streak grows each day.</li><li>Add rows to your Google Sheet: Sow picks them up by itself.</li><li>Facebook Page, Instagram, YouTube, X, Threads and LinkedIn go automatic once connected.</li></ol></details>';
   view.querySelectorAll('[data-sel]').forEach(function (b) { b.onclick = function () { S.sel = b.dataset.sel; renderToday(); }; });
-  view.querySelector('#shareAll').onclick = function () { shareFlow(p, 'facebook', null); };
+  view.querySelector('#shareAll').onclick = function () { shareFlow(p, 'facebook', null, isVid); };
   view.querySelector('#editBtn').onclick = function () { openEdit(p); };
   view.querySelector('#aiBtn').onclick = function () { openEdit(p, true); };
   var fc = view.querySelector('#fcBtn'); if (fc) fc.onclick = async function () { toast((await copy(p.first_comment)) ? 'First comment copied. Paste it under your post.' : p.first_comment, 4000); };
-  view.querySelectorAll('[data-share]').forEach(function (b) { b.onclick = function () { var pl = PLAT.filter(function (x) { return x.k === b.dataset.share; })[0]; shareFlow(p, pl.cap, pl.k); }; });
+  view.querySelectorAll('[data-share]').forEach(function (b) { b.onclick = function () { var pl = PLAT.filter(function (x) { return x.k === b.dataset.share; })[0]; shareFlow(p, pl.cap, pl.k, isVid); }; });
   view.querySelectorAll('[data-mark]').forEach(function (b) { b.onclick = async function () { var k = b.dataset.mark; await setPosted(p, k, !(p.posted || {})[k]); render(); }; });
   view.querySelectorAll('[data-intent]').forEach(function (a) { a.addEventListener('click', function () { var k = a.dataset.intent; copy(capFor(p, k)); setTimeout(function () { if (!(p.posted || {})[k] && confirm('Did it post on ' + PNAME[k] + '? Mark it done?')) setPosted(p, k, true).then(render); }, 1500); }); });
   view.querySelectorAll('[data-now]').forEach(function (b) { b.onclick = async function () {
@@ -658,7 +658,26 @@ function steps(list) { return '<details><summary class="small">Steps</summary><o
 function autoSwitch(k) {
   var c = (S.conn || {})[k]; if (!c || !c.connected) return '';
   var on = ((S.conn.auto || {})[k]) !== false;
-  return '<label class="switch"><input type="checkbox" data-auto="' + k + '"' + (on ? ' checked' : '') + '> Post by itself on time</label> <button class="btn sm ghost" data-disc="' + k + '">Disconnect</button>';
+  return '<label class="switch"><input type="checkbox" data-auto="' + k + '"' + (on ? ' checked' : '') + '> Post by itself on time</label> <button class="btn sm ghost" data-disc="' + k + '">Disconnect</button>' + healthLine(k);
+}
+// Why auto-posting to a platform is failing, in plain words (health check 2026-10-14). Data: /api/connect -> health.
+function healthWhy(k, d) {
+  if (k === 'x' && /credit/i.test(d)) return 'X says your account has no credit. X now charges for each post, so every post to X fails until you add credit at developer.x.com → Billing, or switch “Post by itself” off for X.';
+  if (k === 'youtube' && /quota|429|exceeded the number/i.test(d)) return 'YouTube’s daily upload limit was reached. A new Google project can upload only about 6 videos a day; the rest go out after the limit resets (about 8–9am Nigeria time).';
+  if (/expired|revoked|invalid.?grant|unauthori[sz]ed|\b401\b/i.test(d)) return 'The login to ' + (PNAME[k] || k) + ' has expired. Tap Disconnect, then connect it again.';
+  return 'Last try failed: ' + esc(d.replace(/\s+/g, ' ').slice(0, 160));
+}
+function healthLine(k) {
+  var h = ((S.conn || {}).health || {})[k]; if (!h || h.ok) return '';
+  return '<div class="small" style="margin-top:8px;padding:10px 12px;border-radius:12px;background:#FFF1E6;color:#8A3B12">⚠️ ' + healthWhy(k, String(h.detail || '')) +
+    (h.fails24 > 1 ? ' <span style="opacity:.75">(' + h.fails24 + ' failed tries in the last 24 h.)</span>' : '') +
+    (h.account ? '<br>Sow now rests this channel for 3 hours after this kind of error, then tries one post again. “Post now” on a post still works any time.' : '') + '</div>';
+}
+function healthBanner() {
+  var c = S.conn || {}, h = c.health || {};
+  var bad = Object.keys(h).filter(function (k) { return h[k] && !h[k].ok && (c[k] || {}).connected && ((c.auto || {})[k]) !== false; });
+  if (!bad.length) return '';
+  return '<a class="card small" href="#connect" style="display:block;text-decoration:none;color:inherit;border-left:4px solid #E8590C">⚠️ <b>' + bad.map(function (k) { return esc(PNAME[k] || k); }).join(', ') + '</b>: auto-posting is failing right now. Tap to see why and how to fix it.</a>';
 }
 function connPill(k, extra) {
   var c = (S.conn || {})[k] || {};
@@ -685,13 +704,13 @@ async function renderConnect() {
       'On a laptop open <b>business.facebook.com/settings</b> → Accounts → <b>Pages</b> → Add → Add a Page → your Page. Then Accounts → <b>Instagram accounts</b> → Add → log in.', 'Still in settings: Users → <b>System users</b> → <b>Michael Ai</b> → <b>Assign assets</b> → Pages → your Page → turn on <b>Full control</b> → Save. Do the same under Instagram accounts.', 'Come back here and tap <b>Find my Page</b>, then pick it. Auto-posting starts only after you pick it, and you can pause it any time.']) + '</div>' +
     // YouTube
     '<div class="card"><div class="row"><span style="font-size:22px">▶️</span><b class="grow">YouTube Shorts</b>' + connPill('youtube', yt.configured ? '<span class="pill tap">ready to connect</span>' : '<span class="pill off">needs setup</span>') + '</div>' +
-    '<p class="small muted" style="margin:8px 0">' + (yt.connected ? 'Each post\'s short video uploads by itself. Until Google reviews the app, uploads stay private and you tap Public in YouTube Studio.' : 'Every verse already has a 12-second Short. Today: tap Share video → YouTube.') + '</p>' +
+    '<p class="small muted" style="margin:8px 0">' + (yt.connected ? 'Each post\'s short video uploads by itself. YouTube allows a new Google project only about 6 uploads a day; extra videos wait for the next day.' : 'Every verse already has a 12-second Short. Today: tap Share video → YouTube.') + '</p>' +
     (yt.connected ? autoSwitch('youtube') : '<button class="btn sm" id="ytConn"' + (yt.configured ? '' : ' disabled') + '>Connect YouTube</button>') +
     (yt.connected ? '' : steps(['console.cloud.google.com → your project → APIs → enable <b>YouTube Data API v3</b>.', 'OAuth consent screen → add scopes <b>youtube.upload</b> and <b>youtube.readonly</b> → <b>Publish app</b>.', 'Credentials → your OAuth client → Authorized redirect URIs → add <b>https://sow-ng.vercel.app/api/yt-callback</b>.', 'Send Tab the Client ID and Client secret. Then tap Connect YouTube here.'])) + '</div>' +
     // X
     '<div class="card"><div class="row"><span style="font-size:22px">𝕏</span><b class="grow">X (Twitter)</b>' + connPill('x', '<span class="pill tap">1-tap</span>') + '</div>' +
-    '<p class="small muted" style="margin:8px 0">' + (x.connected ? 'Posts the caption by itself.' : 'Post opens X with the caption ready. Auto-posting needs a free X developer account.') + '</p>' + (x.connected ? autoSwitch('x') :
-      steps(['developer.x.com → sign in → <b>Free</b> plan → create a Project and App.', 'App settings → User authentication → <b>Read and write</b> → save.', 'Keys and tokens → copy <b>API Key and Secret</b>, then generate <b>Access Token and Secret</b>.', 'Send all four to Tab. X\'s free plan allows about 500 posts a month and no stats.'])) + '</div>' +
+    '<p class="small muted" style="margin:8px 0">' + (x.connected ? 'Posts the caption by itself. X charges each post to your X developer account\'s credit, so keep some credit there.' : 'Post opens X with the caption ready. Auto-posting needs an X developer account with credit (X charges per post).') + '</p>' + (x.connected ? autoSwitch('x') :
+      steps(['developer.x.com → sign in → <b>Free</b> plan → create a Project and App.', 'App settings → User authentication → <b>Read and write</b> → save.', 'Keys and tokens → copy <b>API Key and Secret</b>, then generate <b>Access Token and Secret</b>.', 'Send all four to Tab. X now bills per post: add credit under Billing in the developer console, or auto-posts will fail.'])) + '</div>' +
     // Threads
     '<div class="card"><div class="row"><span style="font-size:22px">🧵</span><b class="grow">Threads</b>' + connPill('threads', th.configured ? '<span class="pill tap">ready to connect</span>' : '<span class="pill tap">1-tap</span>') + '</div>' +
     '<p class="small muted" style="margin:8px 0">' + (th.connected ? 'Connected as <b>@' + esc(th.username || '') + '</b>. Posts picture + text by itself. Sow keeps the login fresh.' : 'Post opens Threads with the caption ready. Auto-posting uses the official Threads API.') + '</p>' +
@@ -760,10 +779,282 @@ function renderSignin(msg) {
 }
 
 /* ---------- router ---------- */
+/* ---------- Clip bank (Telegram channel) ---------- */
+var MOODI = { prayer: '🙏', faith: '✨', love: '❤️', funny: '😂', power: '⚡', catchup: '🌙' };
+function t12(hm) { if (!hm) return ''; var h = +hm.slice(0, 2), m = hm.slice(3, 5); return (h % 12 || 12) + (m === '00' ? '' : ':' + m) + (h < 12 ? ' AM' : ' PM'); }
+function dur(s) { if (!s) return ''; s = Math.round(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+function moodName(k) { var m = ((S.clipData || {}).moods || []).filter(function (x) { return x.k === k; })[0]; return m ? m.name : 'No mood tag'; }
+function moodTime(k) { var m = ((S.clipData || {}).moods || []).filter(function (x) { return x.k === k; })[0]; return m ? m.time : ''; }
+async function loadClips(force) {
+  if (S.clipData && !force) return S.clipData;
+  S.clipData = await api('/api/clips'); return S.clipData;
+}
+function clipDay(c) { return c.date || c.planned || (c.pinned) || null; }
+function clipRow(c, noDay) {
+  var d = S.clipData, day = clipDay(c), past = c.status === 'posted', st = '';
+  if (c.problem === 'no_mood') st = '<span class="pill warn">needs a mood tag</span>';
+  else if (c.problem === 'too_big') st = '<span class="pill warn">over 20 MB</span>';
+  else if (c.status === 'skipped') st = '<span class="pill off">skipped</span>';
+  else if (past) st = '<span class="pill done">out ' + esc(rel(c.date).toLowerCase()) + '</span>';
+  else if (c.status === 'scheduled') st = '<span class="pill auto">' + (c.date === d.today ? 'today' : 'set') + '</span>';
+  if (c.pinned && c.status === 'queued') st += ' <span class="pill tap">📌 ' + esc(niceDate(c.pinned)) + '</span>';
+  var mo = ((S.clipData || {}).moods || []).filter(function (x) { return x.k === c.mood; })[0];
+  var when = day && c.status !== 'skipped' && !c.problem ? (noDay ? '' : esc(rel(day)) + ' · ') + esc(t12(moodTime(c.mood))) : (c.status === 'queued' && !c.problem && mo && !mo.on ? 'slot off' : '');
+  return '<div class="clip-item' + (c.status === 'skipped' ? ' skipped' : '') + (past ? ' past' : '') + '" data-clip="' + c.id + '">' +
+    '<div class="cthumb">' + (c.thumb_url ? '<img loading="lazy" src="' + esc(c.thumb_url) + '" alt="">' : '<span>🎬</span>') + (c.duration ? '<i>' + dur(c.duration) + '</i>' : '') + '</div>' +
+    '<div class="grow cbody"><div class="cm">' + (MOODI[c.mood] || '❔') + ' ' + esc(moodName(c.mood)) + (when ? ' · <b>' + when + '</b>' : '') + '</div>' +
+    '<div class="t">' + esc(c.title || 'Clip ' + c.id) + '</div>' +
+    '<div class="d">' + esc(c.movie_name || 'No movie tag') + (c.seq != null ? ' · #' + c.seq : '') + (st ? ' ' + st : '') + '</div></div>' +
+    '<div class="q-acts">' + (past ? '' : (c.status === 'skipped' ? '<button class="icon-btn" data-unskip="' + c.id + '" aria-label="Put back">↺</button>' :
+      '<button class="icon-btn" data-pin="' + c.id + '" aria-label="Pin to a day">📌</button><button class="icon-btn" data-skip="' + c.id + '" aria-label="Skip">✕</button>')) + '</div></div>';
+}
+async function renderClips() {
+  setTab('clips');
+  if (!S.clipData) view.innerHTML = '<div class="loading">Loading your clip bank…</div>';
+  var d;
+  try { d = await loadClips(); } catch (e) { view.innerHTML = '<div class="card"><h2>Clip bank</h2><p class="err">' + esc(e.message) + '</p><button class="btn sm" onclick="S.clipData=null;renderClips()">Try again</button></div>'; return; }
+  if ((location.hash || '').indexOf('#clips') !== 0) return;
+  var v = S.clipView || 'next', set = d.settings, clips = d.clips;
+  var movies = {}; clips.forEach(function (c) { var k = c.movie || '~'; (movies[k] = movies[k] || []).push(c); });
+  var nMovies = Object.keys(movies).filter(function (k) { return k !== '~'; }).length;
+  var waiting = clips.filter(function (c) { return c.status === 'queued' && !c.problem; }).length;
+  var upcoming = clips.filter(function (c) { return (c.status === 'queued' || c.status === 'scheduled') && !c.problem && clipDay(c); })
+    .sort(function (a, b) { var x = clipDay(a) + moodTime(a.mood), y = clipDay(b) + moodTime(b.mood); return x < y ? -1 : x > y ? 1 : 0; });
+  var problems = clips.filter(function (c) { return c.problem && c.status !== 'skipped'; });
+  var lastDay = upcoming.length ? clipDay(upcoming[upcoming.length - 1]) : null;
+  var slotsLine = d.moods.map(function (m) { return '<span class="chip' + (m.on ? '' : ' offc') + '">' + MOODI[m.k] + ' ' + (m.on ? esc(t12(m.time)) : 'off') + '</span>'; }).join('');
+  var head = '<div class="row"><h2 class="grow">Clip bank</h2><button class="btn sm" id="clipAdd">+ Add clip</button></div>' +
+    '<p class="small muted" style="margin:0 2px">' + clips.length + ' clip' + (clips.length === 1 ? '' : 's') + ' from your Telegram channel · ' + nMovies + ' movie' + (nMovies === 1 ? '' : 's') +
+    (lastDay ? ' · planned to ' + esc(niceDate(lastDay)) : '') + '</p>' +
+    (!set.on ? '<div class="card small"><b>Clips are paused.</b> Nothing from the clip bank goes out until you switch it on in Daily slots.</div>' :
+      set.start > d.today ? '<div class="card small">Clips start <b>' + esc(rel(set.start).toLowerCase()) + '</b>, one per mood slot each day.</div>' : '') +
+    '<details class="card small slotbox"><summary>Daily slots (Lagos time)</summary><div class="chips" style="margin:8px 0">' + slotsLine + '</div>' +
+    '<div class="slotgrid">' + d.moods.map(function (m) {
+      return '<label class="slot"><span>' + MOODI[m.k] + ' ' + esc(m.name) + '</span><input type="time" data-time="' + m.k + '" value="' + esc(m.time) + '"><input type="checkbox" data-on="' + m.k + '"' + (m.on ? ' checked' : '') + ' aria-label="' + esc(m.name) + ' on"></label>';
+    }).join('') + '</div>' +
+    '<label>Start date</label><input type="date" id="clipStart" value="' + esc(set.start) + '">' +
+    '<label class="slot" style="margin-top:10px"><span>Post clips from the bank</span><input type="checkbox" id="clipOn"' + (set.on ? ' checked' : '') + '></label>' +
+    '<p class="muted" style="margin:8px 0">Each slot posts one clip a day: the next one in that mood\'s queue, in each movie\'s story order. 📌 pins a clip to a day; ✕ skips it.</p>' +
+    '<button class="btn sm" id="slotSave">Save slots</button></details>' +
+    '<div class="seg" role="tablist"><button data-cv="next"' + (v === 'next' ? ' class="on"' : '') + '>Upcoming</button><button data-cv="movies"' + (v === 'movies' ? ' class="on"' : '') + '>By movie</button><button data-cv="done"' + (v === 'done' ? ' class="on"' : '') + '>Done</button></div>';
+  var body = '';
+  if (!clips.length) body = '<div class="card center"><h3>No clips yet</h3><p class="muted small">Post a clip in your Telegram channel with its mood tag on the first line (for example <b>#prayer</b>). It shows up here by itself.</p></div>';
+  else if (v === 'next') {
+    if (problems.length) body += '<div class="card"><div class="dayhead">Needs you</div>' + problems.map(function (c) { return clipRow(c); }).join('') + '</div>';
+    var byDay = {}, order = []; upcoming.forEach(function (c) { var k = clipDay(c); if (!byDay[k]) { byDay[k] = []; order.push(k); } byDay[k].push(c); });
+    body += order.length ? '<div class="card">' + order.map(function (k) { return '<div class="dayhead">' + esc(rel(k)) + (rel(k) !== niceDate(k) ? ' · ' + esc(niceDate(k)) : '') + '</div>' + byDay[k].map(function (c) { return clipRow(c, true); }).join(''); }).join('') + '</div>'
+      : '<div class="card center small muted">Nothing waiting. Every clip has had its day.</div>';
+    var parked = clips.filter(function (c) { return c.status === 'queued' && !c.problem && !clipDay(c); });
+    if (parked.length) body += '<div class="card"><div class="dayhead">Waiting · slot switched off</div>' + parked.map(function (c) { return clipRow(c); }).join('') + '<p class="small muted" style="margin:6px 0 0">Switch the slot on in Daily slots and these get days.</p></div>';
+  } else if (v === 'movies') {
+    Object.keys(movies).sort(function (a, b) { return movies[a][0].id - movies[b][0].id; }).forEach(function (k) {
+      var list = movies[k].slice().sort(function (a, b) { return (a.seq == null ? 1e9 : a.seq) - (b.seq == null ? 1e9 : b.seq) || a.id - b.id; });
+      var done = list.filter(function (c) { return c.status === 'posted'; }).length;
+      body += '<div class="card"><div class="row"><h3 class="grow">' + esc(k === '~' ? 'No movie tag' : list[0].movie_name) + '</h3><span class="small muted">' + done + '/' + list.length + ' out</span></div>' + list.map(function (c) { return clipRow(c); }).join('') + '</div>';
+    });
+  } else {
+    var dl = clips.filter(function (c) { return c.status === 'posted' || c.status === 'skipped'; }).sort(function (a, b) { return (b.date || '') < (a.date || '') ? -1 : 1; });
+    body = dl.length ? '<div class="card">' + dl.map(function (c) { return clipRow(c); }).join('') + '</div>' : '<div class="card center small muted">Nothing out or skipped yet.</div>';
+  }
+  view.innerHTML = head + body + '<p class="small muted center" style="margin-top:4px">' + waiting + ' waiting in the queue</p>';
+  view.querySelectorAll('[data-cv]').forEach(function (b) { b.onclick = function () { S.clipView = b.dataset.cv; renderClips(); }; });
+  view.querySelector('#clipAdd').onclick = openClipAdd;
+  view.querySelector('#slotSave').onclick = async function () {
+    var times = {}, enabled = {};
+    view.querySelectorAll('[data-time]').forEach(function (i) { times[i.dataset.time] = i.value; });
+    view.querySelectorAll('[data-on]').forEach(function (i) { enabled[i.dataset.on] = i.checked; });
+    await clipAct({ action: 'settings', times: times, enabled: enabled, start: $('#clipStart').value, on: $('#clipOn').checked }, 'Slots saved');
+  };
+  view.querySelectorAll('[data-skip]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); clipAct({ action: 'skip', id: +b.dataset.skip }, 'Skipped. The next clip moves up.'); }; });
+  view.querySelectorAll('[data-unskip]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); clipAct({ action: 'unskip', id: +b.dataset.unskip }, 'Back in the queue'); }; });
+  view.querySelectorAll('[data-pin]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); openClip(+b.dataset.pin, true); }; });
+  view.querySelectorAll('[data-clip]').forEach(function (r) { r.onclick = function () { openClip(+r.dataset.clip); }; });
+}
+async function clipAct(body, ok) {
+  try { S.clipData = await api('/api/clips', { body: body }); closeModal(); if (ok) toast(ok); if (body.action === 'pin' || body.action === 'skip' || body.action === 'prepare') loadPosts().catch(function () {}); renderClips(); }
+  catch (e) { toast(e.message, 5000); }
+}
+function openClip(id, pinFirst) {
+  var d = S.clipData, c = d.clips.filter(function (x) { return x.id === id; })[0]; if (!c) return;
+  var day = clipDay(c), m = $('#modal'), past = c.status === 'posted';
+  m.innerHTML = '<div class="sheet"><div class="row"><h3 class="grow">' + (MOODI[c.mood] || '🎬') + ' ' + esc(c.title || 'Clip') + '</h3><button class="icon-btn" id="mX" aria-label="Close">✕</button></div>' +
+    (c.thumb_url ? '<img class="cbig" src="' + esc(c.thumb_url) + '" alt="">' : '') +
+    '<p class="small muted" style="margin:6px 0">' + esc(c.movie_name || 'No movie tag') + (c.seq != null ? ' · story #' + c.seq : '') + (c.duration ? ' · ' + dur(c.duration) : '') + (c.size ? ' · ' + (c.size / 1048576).toFixed(1) + ' MB' : '') + (c.hq_url ? ' · HQ ✓' : '') + '</p>' +
+    (past ? '<p><b>Went out ' + esc(rel(c.date).toLowerCase()) + '.</b></p>' : c.status === 'skipped' ? '<p><b>Skipped.</b></p>' : day ? '<p><b>' + esc(rel(day)) + ' at ' + esc(t12(moodTime(c.mood))) + '</b>' + (c.pinned ? ' (pinned)' : '') + '</p>' : '') +
+    '<p class="cap" style="white-space:pre-wrap">' + esc(c.caption) + '</p><p class="small muted">' + esc(c.hashtags) + '</p>' +
+    (past ? '' : '<label>Pin to a day</label><div class="row"><input type="date" id="pinD" min="' + d.today + '" value="' + esc(c.pinned || day || d.today) + '"><button class="btn sm" id="pinGo">📌 Pin</button></div>' +
+      (c.pinned ? '<button class="btn sm ghost" id="unpin" style="margin-top:8px">Remove pin</button>' : '')) +
+    '<details style="margin-top:12px"><summary>Fix tags</summary><label>Mood</label><select id="eMood">' + d.moods.map(function (x) { return '<option value="' + x.k + '"' + (x.k === c.mood ? ' selected' : '') + '>' + MOODI[x.k] + ' ' + esc(x.name) + '</option>'; }).join('') + (c.mood ? '' : '<option value="" selected>Pick a mood</option>') + '</select>' +
+    '<div class="row"><div class="grow"><label>Movie</label><input id="eMovie" value="' + esc(c.movie || '') + '" placeholder="wedding-weekend"></div><div style="width:90px"><label>Story #</label><input id="eSeq" inputmode="numeric" value="' + esc(c.seq == null ? '' : c.seq) + '"></div></div>' +
+    '<label>HQ video link (optional)</label><input id="eHq" type="url" value="' + esc(c.hq_url || '') + '" placeholder="https://… full-quality .mp4">' +
+    '<button class="btn sm soft" id="eSave" style="margin-top:8px">Save tags</button></details>' +
+    (past ? '' : '<div class="row" style="margin-top:14px">' + (c.status === 'skipped' ? '<button class="btn sm leaf grow" id="unsk">↺ Put back in the queue</button>' : '<button class="btn sm ghost grow" id="sk">✕ Skip this clip</button>') + '</div>') + '</div>';
+  m.hidden = false;
+  m.onclick = function (e) { if (e.target === m) closeModal(); };
+  m.querySelector('#mX').onclick = closeModal;
+  var pg = m.querySelector('#pinGo'); if (pg) pg.onclick = function () { clipAct({ action: 'pin', id: id, date: m.querySelector('#pinD').value }, '📌 Pinned to ' + niceDate(m.querySelector('#pinD').value)); };
+  var up = m.querySelector('#unpin'); if (up) up.onclick = function () { clipAct({ action: 'unpin', id: id }, 'Pin removed'); };
+  var sk = m.querySelector('#sk'); if (sk) sk.onclick = function () { clipAct({ action: 'skip', id: id }, 'Skipped. The next clip moves up.'); };
+  var us = m.querySelector('#unsk'); if (us) us.onclick = function () { clipAct({ action: 'unskip', id: id }, 'Back in the queue'); };
+  m.querySelector('#eSave').onclick = function () { clipAct({ action: 'edit', id: id, mood: m.querySelector('#eMood').value || undefined, movie: m.querySelector('#eMovie').value, seq: m.querySelector('#eSeq').value, hq_url: m.querySelector('#eHq').value }, 'Tags saved'); };
+  if (pinFirst && pg) setTimeout(function () { var i = m.querySelector('#pinD'); i.focus(); try { i.showPicker(); } catch (e) {} }, 50);
+}
+function openClipAdd() {
+  var m = $('#modal');
+  m.innerHTML = '<div class="sheet"><div class="row"><h3 class="grow">Add a clip</h3><button class="icon-btn" id="mX" aria-label="Close">✕</button></div>' +
+    '<p>Post the video in your Telegram channel <b>Michael\'s Work</b>. Sow picks it up by itself within seconds. Write the caption like this:</p>' +
+    '<pre class="fmt">#prayer\nYour hook caption, one or two lines 🙏\n#NigerianChristianMovies #MountZion #Prayer\n#movie:wedding-weekend #seq:03</pre>' +
+    '<ul class="steps small"><li><b>Line 1, the mood:</b> #prayer, #faith, #love, #funny, #power or #catchup.</li><li><b>Then</b> the caption and the hashtags.</li><li><b>Last line:</b> #movie: the movie name with dashes, and #seq: where the clip sits in the story (keeps the order).</li><li>Videos up to <b>20 MB</b> (Telegram\'s limit for bots).</li><li>Edit the caption in Telegram and Sow updates too.</li></ul>' +
+    '<label>Already in the channel but not showing here? Paste its link</label><div class="row"><input id="addLink" placeholder="https://t.me/c/…/25"><button class="btn sm" id="addGo">Add</button></div>' +
+    '<p class="small muted">In Telegram: long-press the clip → Copy Link.</p></div>';
+  m.hidden = false; m.onclick = function (e) { if (e.target === m) closeModal(); };
+  m.querySelector('#mX').onclick = closeModal;
+  m.querySelector('#addGo').onclick = async function () { var b = this; b.disabled = true; b.textContent = 'Adding…'; await clipAct({ action: 'add', link: m.querySelector('#addLink').value }, 'Clip added'); b.disabled = false; b.textContent = 'Add'; };
+}
+
+/* ---------- 🌸 Blossom lane (Blossom's own Page; separate from verses and clips) ---------- */
+var BSER = { weekly: { ic: '📰', c: 'bw' }, built: { ic: '🛠️', c: 'bb' }, aiclass: { ic: '🧠', c: 'ba' }, nights: { ic: '🌙', c: 'bn' } };
+var BSTATE = { queued: ['scheduled', 'auto'], due: ['due now', 'auto'], missed: ['missed', 'warn'], posting: ['posting…', 'auto'], posted: ['posted', 'done'], skipped: ['skipped', 'off'], failed: ['failed', 'warn'], bank: ['no date', 'off'] };
+async function loadBlossom(force) { if (S.bl && !force) return S.bl; S.bl = await api('/api/blossom'); return S.bl; }
+async function blAct(body, ok) {
+  try { var r = await api('/api/blossom', { body: body }); if (r && r.posts) S.bl = r; else S.bl = await api('/api/blossom'); closeModal(); if (ok) toast(ok, 3500); renderBlossom(); return r; }
+  catch (e) { toast(e.message, 6000); }
+}
+function blItem(p, d) {
+  var sk = BSER[p.series_key] || { ic: '🌸', c: 'bb' }, st = BSTATE[p.state] || [p.state, 'off'], open = S.blOpen === p.id;
+  var conn = d.status.connected, canPost = conn && ['queued', 'failed'].indexOf(p.status) >= 0;
+  var acts = '';
+  if (['queued', 'failed', 'skipped'].indexOf(p.status) >= 0) acts += '<button class="btn sm ghost" data-bedit="' + esc(p.id) + '">✏️ Edit</button>';
+  if (p.status === 'queued' || p.status === 'failed') acts += '<button class="btn sm ghost" data-bskip="' + esc(p.id) + '">✕ Skip</button>';
+  if (p.status === 'skipped') acts += '<button class="btn sm ghost" data-bunskip="' + esc(p.id) + '">↺ Put back</button>';
+  if (p.status === 'failed') acts += '<button class="btn sm ghost" data-bretry="' + esc(p.id) + '">↻ Back to queue</button>';
+  if (p.status === 'queued' || p.status === 'failed') acts += '<button class="btn sm' + (canPost ? '' : ' ghost') + '" data-bnow="' + esc(p.id) + '"' + (canPost ? '' : ' disabled title="Connect the Blossom Page first"') + '>🚀 Post now</button>';
+  var links = '';
+  if (p.remote && p.remote.fb) links += '<a target="_blank" rel="noopener" href="https://www.facebook.com/' + esc(p.remote.fb) + '">Facebook post ↗</a> ';
+  if (p.remote && p.remote.ig) links += '<span class="small muted">Instagram ✓</span>';
+  var cs = p.caption_stats || {};
+  return '<div class="bl-item' + (p.status === 'skipped' ? ' skipped' : '') + (p.status === 'posted' ? ' past' : '') + '" data-bid="' + esc(p.id) + '">' +
+    '<div class="row bl-top"><b class="bl-time">' + esc(t12(p.time)) + '</b><span class="bl-badge ' + sk.c + '">' + sk.ic + ' ' + esc(p.series || 'Blossom') + '</span><span class="grow"></span><span class="pill ' + st[1] + '">' + esc(st[0]) + '</span></div>' +
+    '<div class="t bl-title">' + esc(p.title || p.id) + '</div>' +
+    '<div class="bl-strip">' + (p.images || []).map(function (im, i) { return '<img loading="lazy" src="' + esc(im.thumb || im.url) + '" alt="slide ' + (i + 1) + '" data-bimg="' + esc(p.id) + '" data-n="' + i + '">'; }).join('') + '</div>' +
+    '<div class="small muted">' + (p.images || []).length + ' image' + ((p.images || []).length === 1 ? '' : 's') + ' · ' + (cs.fb_len || 0) + ' chars · ' + (cs.tags || 0) + ' hashtags' + (cs.ig_trimmed ? ' · IG trims to ' + cs.ig_tags : '') + '</div>' +
+    '<div class="bl-cap' + (open ? ' open' : '') + '" data-bcap="' + esc(p.id) + '">' + esc(p.caption) + '</div>' +
+    (p.error ? '<p class="err small" style="margin:6px 0">' + esc(p.error) + '</p>' : '') +
+    (p.state === 'missed' ? '<p class="small muted" style="margin:6px 0">Its time passed more than 3 hours ago, so it was not posted by itself. Post it now or change its day.</p>' : '') +
+    (links ? '<div class="small" style="margin:6px 0">' + links + '</div>' : '') +
+    (acts ? '<div class="bl-acts">' + acts + '</div>' : '') + '</div>';
+}
+async function renderBlossom() {
+  setTab('blossom');
+  if (!S.bl) view.innerHTML = '<div class="loading">Loading Blossom posts…</div>';
+  var d;
+  try { d = await loadBlossom(); } catch (e) { view.innerHTML = '<div class="card"><h2>🌸 Blossom</h2><p class="err">' + esc(e.message) + '</p><button class="btn sm" onclick="S.bl=null;renderBlossom()">Try again</button></div>'; return; }
+  if ((location.hash || '').indexOf('#blossom') !== 0) return;
+  var v = S.blView || 'next', st = d.status, set = d.settings, posts = d.posts;
+  var upcoming = posts.filter(function (p) { return ['queued', 'failed', 'posting'].indexOf(p.status) >= 0; });
+  var doneL = posts.filter(function (p) { return p.status === 'posted' || p.status === 'skipped'; });
+  var first = posts.length ? posts[0].date : null, last = posts.length ? posts[posts.length - 1].date : null;
+  var pagePill = st.connected ? '<span class="pill done">✓ ' + esc(st.page_name || 'Page') + '</span>' : '<span class="pill warn">not connected</span>';
+  var igPill = st.ig ? '<span class="pill done">✓ @' + esc(st.ig_username || st.ig_id) + '</span>' : '<span class="pill off">not linked yet</span>';
+  var autoTxt = set.auto ? '<span class="pill done">AUTO ON</span>' : '<span class="pill off">AUTO OFF</span>';
+  var head = '<div class="row"><h2 class="grow">🌸 Blossom</h2>' + autoTxt + '</div>' +
+    '<p class="small muted" style="margin:0 2px">' + posts.length + ' post' + (posts.length === 1 ? '' : 's') + (first ? ' · ' + esc(niceDate(first)) + (last !== first ? ' → ' + esc(niceDate(last)) : '') : '') + ' · Blossom Facebook Page' + (st.ig ? ' + Instagram' : '') + '. Your verses and clips are separate.</p>';
+  var card = '<details class="card small slotbox"' + (st.connected ? '' : ' open') + '><summary>Page, Instagram &amp; auto-posting</summary>' +
+    '<div class="row" style="margin-top:8px"><span class="grow">🏳️ Blossom Facebook Page</span>' + pagePill + '</div>' +
+    '<div class="row" style="margin-top:6px"><span class="grow">📸 Blossom Instagram</span>' + igPill + '</div>' +
+    '<label class="slot" style="margin-top:10px"><span><b>AUTO</b> · post each one at its time</span><input type="checkbox" id="blAuto"' + (set.auto ? ' checked' : '') + (st.connected ? '' : ' disabled') + '></label>' +
+    (st.connected ? '<label class="slot"><span>Post to Facebook Page</span><input type="checkbox" id="blFb"' + (set.fb ? ' checked' : '') + '></label>' +
+      '<label class="slot"><span>Post to Instagram</span><input type="checkbox" id="blIg"' + (set.ig ? ' checked' : '') + (st.ig ? '' : ' disabled') + '></label>' : '') +
+    '<p class="muted" style="margin:8px 0">' + (st.connected ? (set.auto ? 'Sow posts each Blossom post by itself at its time (Lagos), within about 5 minutes.' : 'Auto-posting is OFF: nothing goes out until you switch it on.') : 'Auto-posting stays OFF until the Blossom Page is connected.') + '</p>' +
+    '<div class="chips">' + Object.keys(d.series).map(function (k) { return '<span class="chip">' + BSER[k].ic + ' ' + esc(d.series[k]) + ' · ' + esc(d.slots[k]) + '</span>'; }).join('') + '</div>' +
+    '<div class="row" style="margin-top:10px;gap:6px;flex-wrap:wrap"><button class="btn sm" id="blScan">' + (st.connected ? 'Change Page' : 'Find my Page') + '</button><button class="btn sm ghost" id="blDry">Check next post</button>' + (st.connected ? '<button class="btn sm ghost" id="blIgR">Look for Instagram</button><button class="btn sm ghost" id="blDisc">Disconnect</button>' : '') + '</div>' +
+    '<div id="blOut"></div>' +
+    '<details style="margin-top:10px"' + (st.connected ? '' : ' open') + '><summary>How to connect the Blossom Page</summary><ol class="steps small">' + d.connect_steps.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ol>' +
+    '<p class="small muted">' + esc(d.connect_alt) + '</p>' +
+    '<label>Paste a Page token</label><input id="blPid" placeholder="Blossom Page ID (numbers)"><div class="row" style="margin-top:6px"><input id="blTok" placeholder="EAA…"><button class="btn sm" id="blTokGo">Connect</button></div></details>' +
+    '</details>';
+  var seg = '<div class="seg" role="tablist"><button data-bv="next"' + (v === 'next' ? ' class="on"' : '') + '>Upcoming ' + upcoming.length + '</button><button data-bv="done"' + (v === 'done' ? ' class="on"' : '') + '>Done ' + doneL.length + '</button><button data-bv="all"' + (v === 'all' ? ' class="on"' : '') + '>All</button></div>';
+  var list = v === 'next' ? upcoming : v === 'done' ? doneL.slice().reverse() : posts, body = '';
+  if (!posts.length) body = '<div class="card center"><h3>No Blossom posts yet</h3><p class="muted small">Tab loads each week\'s posts here.</p></div>';
+  else if (!list.length) body = '<div class="card center small muted">' + (v === 'next' ? 'Nothing waiting.' : 'Nothing posted or skipped yet.') + '</div>';
+  else { var byDay = {}, order = []; list.forEach(function (p) { var k = p.date || '~'; if (!byDay[k]) { byDay[k] = []; order.push(k); } byDay[k].push(p); });
+    body = order.map(function (k) { return '<div class="card"><div class="dayhead">' + esc(rel(k === '~' ? null : k)) + (k !== '~' && rel(k) !== niceDate(k) ? ' · ' + esc(niceDate(k)) : '') + '</div>' + byDay[k].map(function (p) { return blItem(p, d); }).join('') + '</div>'; }).join(''); }
+  view.innerHTML = head + card + seg + body;
+  view.querySelectorAll('[data-bv]').forEach(function (b) { b.onclick = function () { S.blView = b.dataset.bv; renderBlossom(); }; });
+  view.querySelectorAll('[data-bcap]').forEach(function (c) { c.onclick = function () { S.blOpen = S.blOpen === c.dataset.bcap ? null : c.dataset.bcap; c.classList.toggle('open'); }; });
+  view.querySelectorAll('[data-bskip]').forEach(function (b) { b.onclick = function () { blAct({ action: 'skip', id: b.dataset.bskip }, 'Skipped. It will not be posted.'); }; });
+  view.querySelectorAll('[data-bunskip]').forEach(function (b) { b.onclick = function () { blAct({ action: 'unskip', id: b.dataset.bunskip }, 'Back in the queue'); }; });
+  view.querySelectorAll('[data-bretry]').forEach(function (b) { b.onclick = function () { blAct({ action: 'retry', id: b.dataset.bretry }, 'Back in the queue'); }; });
+  view.querySelectorAll('[data-bedit]').forEach(function (b) { b.onclick = function () { openBlEdit(b.dataset.bedit); }; });
+  view.querySelectorAll('[data-bimg]').forEach(function (im) { im.onclick = function () { openBlImg(im.dataset.bimg, +im.dataset.n); }; });
+  view.querySelectorAll('[data-bnow]').forEach(function (b) { b.onclick = async function () {
+    if (!d.status.connected) { toast('Connect the Blossom Page first (see the steps above).', 4000); return; }
+    var p = d.posts.filter(function (x) { return x.id === b.dataset.bnow; })[0];
+    if (!confirm('Post "' + (p.title || p.id) + '" to the Blossom Page' + (d.settings.ig && d.status.ig ? ' and Instagram' : '') + ' right now? It is public at once.')) return;
+    b.disabled = true; b.textContent = 'Posting…';
+    var r = await blAct({ action: 'post_now', id: b.dataset.bnow });
+    if (r && r.result) toast(r.result.ok ? '✓ Posted' : (r.result.error || r.result.skipped || 'Not posted'), 6000);
+  }; });
+  var a = $('#blAuto'); if (a) a.onchange = function () { blAct({ action: 'settings', auto: a.checked }, a.checked ? '🌸 Auto-posting ON' : 'Auto-posting OFF'); };
+  var f = $('#blFb'); if (f) f.onchange = function () { blAct({ action: 'settings', fb: f.checked }, 'Saved'); };
+  var g = $('#blIg'); if (g) g.onchange = function () { blAct({ action: 'settings', ig: g.checked }, 'Saved'); };
+  $('#blScan').onclick = blScan;
+  $('#blDry').onclick = blDry;
+  var ir = $('#blIgR'); if (ir) ir.onclick = function () { blAct({ action: 'refresh_ig' }, 'Checked the Page for Instagram'); };
+  var dc = $('#blDisc'); if (dc) dc.onclick = function () { if (confirm('Disconnect the Blossom Page? Auto-posting turns off.')) blAct({ action: 'disconnect' }, 'Disconnected'); };
+  $('#blTokGo').onclick = function () { var pid = $('#blPid').value.trim(), t = $('#blTok').value.trim(); if (!/^\d{5,}$/.test(pid) || !/^EA/.test(t)) { toast('Enter the Page ID (numbers) and a Page token (starts with EA).', 4000); return; } blAct({ action: 'connect', page_id: pid, page_token: t }, '✓ Blossom Page connected. AUTO is still off.'); };
+}
+async function blScan() {
+  var out = $('#blOut'); out.innerHTML = '<p class="small muted">Looking for your Pages…</p>';
+  try {
+    var r = await api('/api/blossom', { body: { action: 'scan' } });
+    if (!r.token) { out.innerHTML = '<p class="small muted">No Meta token on Sow yet. Use "Paste a Page token" below.</p>'; return; }
+    if (!r.pages.length) { out.innerHTML = '<p class="small err">Facebook shows no Pages to Sow yet. Do steps 1–3 below (add the Blossom Page to your business and assign it to "Michael Ai"), then tap Find my Page again.</p>'; return; }
+    out.innerHTML = '<p class="small">Tap the Blossom Page:</p>' + r.pages.map(function (p) { return '<button class="btn sm ghost" style="margin:3px" data-bpage="' + esc(p.id) + '">' + esc(p.name) + (p.ig ? ' · @' + esc(p.ig.username || p.ig.id) : '') + '</button>'; }).join('');
+    out.querySelectorAll('[data-bpage]').forEach(function (b) { b.onclick = function () { if (!confirm('Use ' + b.textContent + ' for Blossom posts? Auto-posting stays off until you switch it on.')) return; blAct({ action: 'connect', page_id: b.dataset.bpage }, '✓ Connected. AUTO is still off.'); }; });
+  } catch (e) { out.innerHTML = '<p class="small err">' + esc(e.message) + '</p>'; }
+}
+async function blDry() {
+  var out = $('#blOut'); out.innerHTML = '<p class="small muted">Checking the next post (nothing is posted)…</p>';
+  try {
+    var r = await api('/api/blossom', { body: { action: 'dryrun' } });
+    if (r.error) { out.innerHTML = '<p class="small muted">' + esc(r.error) + '</p>'; return; }
+    var okImgs = r.images.filter(function (i) { return i.ok; }).length, nReq = r.requests.facebook.length + r.requests.instagram.length;
+    out.innerHTML = '<div class="pv small" style="margin-top:8px"><b>' + esc(r.post.title) + '</b> · ' + esc(niceDate(r.post.date)) + ' ' + esc(t12(r.post.time)) + '\n' +
+      (okImgs === r.images.length ? '✓' : '✕') + ' images ' + okImgs + '/' + r.images.length + ' public JPEG\n' +
+      '✓ caption ' + r.caption.fb_len + ' chars, ' + r.caption.tags + ' hashtags' + (r.caption.ig_trimmed ? ' (Instagram copy trimmed to ' + r.caption.ig_tags + ')' : '') + '\n' +
+      nReq + ' requests ready (' + r.requests.facebook.length + ' Facebook' + (r.requests.instagram.length ? ', ' + r.requests.instagram.length + ' Instagram' : '') + ')\n' +
+      (r.problems.length ? '✕ ' + r.problems.join(', ') + '\n' : '') + (r.blocked_by.length ? '⏸ ' + r.blocked_by.join('; ') : '✓ ready to post at its time') + '\nNothing was posted.</div>';
+  } catch (e) { out.innerHTML = '<p class="small err">' + esc(e.message) + '</p>'; }
+}
+function openBlEdit(id) {
+  var p = S.bl.posts.filter(function (x) { return x.id === id; })[0]; if (!p) return; var m = $('#modal');
+  m.innerHTML = '<div class="sheet"><div class="row"><h3 class="grow">Edit post</h3><button class="icon-btn" id="mX" aria-label="Close">✕</button></div>' +
+    '<p class="small muted">' + esc(p.series) + ' · ' + esc(p.title) + '</p>' +
+    '<div class="row" style="gap:8px"><div class="grow"><label>Day</label><input type="date" id="beD" value="' + esc(p.date) + '"></div><div class="grow"><label>Time (Lagos)</label><input type="time" id="beT" value="' + esc(p.time) + '"></div></div>' +
+    '<label>Caption <span id="beN" class="muted"></span></label><textarea id="beC" rows="14">' + esc(p.caption) + '</textarea>' +
+    '<button class="btn" id="beSave" style="width:100%;margin-top:10px">Save</button></div>';
+  m.hidden = false; m.onclick = function (e) { if (e.target === m) closeModal(); };
+  var c = m.querySelector('#beC'), n = m.querySelector('#beN');
+  var cnt = function () { var t = c.value, h = (t.match(/#[^\s#]+/g) || []).length; n.textContent = '· ' + t.length + ' chars · ' + h + ' hashtags' + (t.length > 2200 || h > 30 ? ' (Instagram copy gets trimmed)' : ''); }; c.oninput = cnt; cnt();
+  m.querySelector('#mX').onclick = closeModal;
+  m.querySelector('#beSave').onclick = function () { blAct({ action: 'edit', id: id, caption: c.value, date: m.querySelector('#beD').value, time: m.querySelector('#beT').value }, 'Saved ✓'); };
+}
+function openBlImg(id, n) {
+  var p = S.bl.posts.filter(function (x) { return x.id === id; })[0]; if (!p) return; var m = $('#modal'), ims = p.images || [];
+  var show = function (i) {
+    m.innerHTML = '<div class="sheet"><div class="row"><b class="grow">' + esc(p.title) + ' · ' + (i + 1) + '/' + ims.length + '</b><button class="icon-btn" id="mX" aria-label="Close">✕</button></div>' +
+      '<img src="' + esc(ims[i].url) + '" alt="" style="width:100%;border-radius:12px;margin-top:8px">' +
+      '<div class="row" style="margin-top:8px"><button class="btn sm ghost" id="bPrev"' + (i ? '' : ' disabled') + '>‹ Prev</button><span class="grow"></span><button class="btn sm ghost" id="bNext"' + (i < ims.length - 1 ? '' : ' disabled') + '>Next ›</button></div></div>';
+    m.querySelector('#mX').onclick = closeModal; m.querySelector('#bPrev').onclick = function () { show(i - 1); }; m.querySelector('#bNext').onclick = function () { show(i + 1); };
+  };
+  m.hidden = false; m.onclick = function (e) { if (e.target === m) closeModal(); }; show(n || 0);
+}
+
 function render() {
   var h = (location.hash || '#today').slice(1).split('?')[0];
   if (h === 'queue') h = 'plan'; if (h === 'import') h = 'sheet';
-  if (h === 'plan') renderPlan(); else if (h === 'sheet') renderImport(); else if (h === 'connect') renderConnect(); else if (h === 'stats') renderStats(); else renderToday();
+  if (h === 'plan') renderPlan(); else if (h === 'clips') renderClips(); else if (h === 'blossom') renderBlossom(); else if (h === 'sheet') renderImport(); else if (h === 'connect') renderConnect(); else if (h === 'stats') renderStats(); else renderToday();
 }
 window.addEventListener('hashchange', function () { closeModal(); render(); window.scrollTo(0, 0); });
 

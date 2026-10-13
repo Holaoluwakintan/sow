@@ -54,3 +54,31 @@ Deploy: Vercel REST upload of this folder (framework none, output `public`).
 - Music bed for Shorts.
 
 by Olaoluwa Michael
+
+
+## State as of 2026-10-14 (synced from the live deploy)
+This repo now matches production (Vercel project `sow-ng` on Michael's team `michael-380d`): clip bank (Telegram, `api/clips.js`, `api/_clips.js`, `api/tg.js`), Blossom lane (`api/blossom.js`, `api/_blossom.js`), WhatsApp-bot pings from the cron, picture bank, and the Oct 14 health-check fixes (cron back-off after account errors, per-channel health on `/api/connect`, failure banner + plain-English reasons in the app).
+
+**Deploy** (no build): upload this folder to Vercel as production, e.g. `vercel --prod` from the repo root, or the REST script Tab uses (`deploy_dir.py sow-ng <folder>`). Project settings: framework none, output directory `public`. Hobby plan = max 12 functions; `api/` is at 12, so new routes must go into an existing file.
+
+**Environment variables** (names only; values live in Vercel → sow-ng → Settings → Environment Variables):
+- `APP_URL`
+- `BOT_PING_URL`
+- `CRON_SECRET`
+- `GEMINI_API_KEY`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `META_TOKEN`
+- `SOW_API_KEY`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SECRET_KEY`
+- `SUPABASE_URL`
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+- `TELEGRAM_WEBHOOK_SECRET`
+- `X_ACCESS_SECRET`
+- `X_ACCESS_TOKEN`
+- `X_API_KEY`
+- `X_API_SECRET`
+
+**Scheduler:** Supabase pg_cron job `sow-autopost` (`5,35 * * * *`) POSTs `/api/cron` with the bearer secret stored in Supabase Vault (`sow_cron_secret`).

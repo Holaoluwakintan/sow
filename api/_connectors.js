@@ -38,7 +38,8 @@ export async function fbPost(post) {
   const msg = captionFor(post, 'facebook');
   const params = new URLSearchParams({ caption: msg, access_token: tok });
   let r;
-  if (post.media_url) { params.set('url', publicMedia(post.media_url)); r = await fetch(`${GRAPH}/${id}/photos`, { method: 'POST', body: params }); }
+  if (post.video_url) { const v = new URLSearchParams({ file_url: /^https:\/\//.test(post.video_url) ? post.video_url : publicMedia(post.video_url), description: msg, access_token: tok }); if (post.title) v.set('title', String(post.title).slice(0, 250)); r = await fetch(`${GRAPH}/${id}/videos`, { method: 'POST', body: v }); }
+  else if (post.media_url) { params.set('url', publicMedia(post.media_url)); r = await fetch(`${GRAPH}/${id}/photos`, { method: 'POST', body: params }); }
   else { params.delete('caption'); params.set('message', msg); r = await fetch(`${GRAPH}/${id}/feed`, { method: 'POST', body: params }); }
   const j = await gjson(r, 'Facebook');
   const pid = j.post_id || j.id;
